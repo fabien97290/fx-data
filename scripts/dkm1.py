@@ -5,12 +5,13 @@ import numpy as np, pandas as pd, requests
 from concurrent.futures import ThreadPoolExecutor
 SYM, Y0, Y1 = sys.argv[1].upper(), int(sys.argv[2]), int(sys.argv[3])
 OUT = os.environ.get("DKOUT", "data")
+FAILED = False
 DT = np.dtype([("s", ">u4"), ("o", ">u4"), ("c", ">u4"), ("l", ">u4"), ("h", ">u4"), ("v", ">f4")])
 def get(args):
     d, side = args
     url = f"https://datafeed.dukascopy.com/datafeed/{SYM}/{d.year}/{d.month-1:02d}/{d.day:02d}/{side}_candles_min_1.bi5"
     s = requests.Session(); s.headers["User-Agent"] = "Mozilla/5.0"
-    for k in range(12):
+    for k in range(30):
         try:
             r = s.get(url, timeout=120)
             if r.status_code == 200:
@@ -19,7 +20,7 @@ def get(args):
                 return d, side, a
             if r.status_code == 404: return d, side, None
         except Exception: pass
-        time.sleep(min(60, 3 * (k + 1)))
+        time.sleep(min(120, 5 * (k + 1)))
     raise RuntimeError("échec " + url)
 for Y in range(Y0, Y1 + 1):
     for M in range(1, 13):
@@ -28,7 +29,10 @@ for Y in range(Y0, Y1 + 1):
         t0 = time.time()
         days = [dt.date(Y, M, 1) + dt.timedelta(k) for k in range(31)]
         days = [d for d in days if d.month == M and d.weekday() != 5]
-        with ThreadPoolExecutor(16) as ex: res = list(ex.map(get, [(d, s) for d in days for s in ("BID", "ASK")]))
+        try:
+            with ThreadPoolExecutor(int(os.environ.get('DKTHREADS', '4'))) as ex: res = list(ex.map(get, [(d, s) for d in days for s in ("BID", "ASK")]))
+        except RuntimeError as e:
+            print(f"{SYM} {Y}-{M:02d} : ÉCHEC, repris au prochain passage ({e})", flush=True); FAILED = True; continue
         by = {}
         for d, side, a in res:
             if a is None or len(a) == 0: continue
@@ -42,3 +46,5 @@ for Y in range(Y0, Y1 + 1):
             if c != "t" and not c.endswith("v"): X[c] = X[c].astype(np.int32)
         X.to_parquet(fn, compression="zstd", compression_level=9, index=False)
         print(f"{SYM} {Y}-{M:02d} : {len(X):,} min, {os.path.getsize(fn)/1e6:.2f} Mo, {time.time()-t0:.0f} s", flush=True)
+
+if FAILED: sys.exit(1)

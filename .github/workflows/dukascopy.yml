@@ -1,6 +1,8 @@
 name: dukascopy-m1
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "17 */3 * * *"
   push:
     paths: [".github/workflows/dukascopy.yml", "scripts/dkm1.py"]
 permissions:
@@ -12,7 +14,7 @@ jobs:
     timeout-minutes: 340
     strategy:
       fail-fast: false
-      max-parallel: 12
+      max-parallel: 6
       matrix:
         sym: [EURUSD, USDJPY, GBPUSD, USDCHF, USDCAD, AUDUSD, EURJPY, EURNZD]
         year: [2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]
